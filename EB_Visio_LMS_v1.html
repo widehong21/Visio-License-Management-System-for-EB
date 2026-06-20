@@ -271,6 +271,47 @@ textarea.fc{resize:vertical;min-height:80px}
   </div>
 </div>
 
+<!-- ══ 관리자 라이선스 등록 모달 ═══════════════════════════════ -->
+<div id="assignLicOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,.52);display:none;align-items:center;justify-content:center;z-index:10001">
+  <div style="background:#fff;border-radius:16px;padding:28px 32px;width:420px;box-shadow:0 24px 64px rgba(0,0,0,.25)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:16px;font-weight:800;color:var(--gray1)">📋 라이선스 등록</div>
+      <button onclick="closeAssignLicModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--gray3)">✕</button>
+    </div>
+    <div id="alm_user_info" style="padding:8px 12px;background:var(--blue-l);border-radius:8px;font-size:12.5px;color:#1565C0;margin-bottom:14px"></div>
+    <div class="fg">
+      <label class="fl">라이선스 유형 <span class="req">*</span></label>
+      <select class="fc" id="alm_type" onchange="refreshAlmSerial()">
+        <option value="">— 유형 선택 —</option>
+        <option>Process</option>
+        <option>Detail</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label class="fl" style="display:flex;align-items:center;gap:6px">
+        시리얼번호 <span class="req">*</span>
+        <span id="alm_avail_badge" style="font-size:10px;font-weight:600;padding:1px 7px;border-radius:10px;background:var(--green-l);color:var(--green)"></span>
+      </label>
+      <select class="fc" id="alm_serial">
+        <option value="">— 유형을 먼저 선택하세요 —</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label class="fl">등록일자 <span class="req">*</span></label>
+      <input class="fc" type="date" id="alm_date">
+    </div>
+    <div class="fg">
+      <label class="fl">Remark</label>
+      <input class="fc" id="alm_remark" placeholder="메모 (선택)">
+    </div>
+    <div id="alm_err" style="margin-bottom:6px"></div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-p" style="flex:1" onclick="confirmAssignLic()">✅ 등록 완료</button>
+      <button class="btn btn-g" style="flex:1" onclick="closeAssignLicModal()">취소</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ GUEST APPLY OVERLAY ═══════════════════════════════ -->
 <div id="guestApplyOverlay">
   <div class="ga-card">
@@ -509,7 +550,7 @@ textarea.fc{resize:vertical;min-height:80px}
           <div class="tab-pane act" id="admin-tab-users">
             <div id="adm_ucount" style="font-size:12.5px;color:var(--gray2);margin-bottom:10px"></div>
             <div class="tw" style="margin-bottom:10px"><table>
-              <thead><tr><th>ID</th><th>이름</th><th>사번</th><th>그룹</th><th>Knox 계정</th><th>관리자</th><th>활성</th><th>등록일</th><th>라이선스 배정</th><th>강제삭제</th></tr></thead>
+              <thead><tr><th>ID</th><th>이름</th><th>사번</th><th>그룹</th><th>Knox 계정</th><th>관리자</th><th>활성</th><th>등록일</th><th>라이선스 배정</th><th>라이선스 등록</th><th>강제삭제</th></tr></thead>
               <tbody id="adm_ubody"></tbody>
             </table></div>
             <div style="margin-bottom:16px;text-align:right">
@@ -1885,7 +1926,7 @@ function downloadPoolExcel(){
     const exRows=pools.map((p,i)=>{
       const lic=DB.licenses.find(l=>l.pool_id===p.id&&l.status==='active');
       const u=lic?gU(lic.user_id):null;
-      const status=p.is_license_deleted?'삭제됨':p.is_assigned?'배정됨':'가용';
+      const status=p.is_assigned?'배정됨':'가용';
       const dispName = u?.name         || p.assigned_user_name    || '';
       const dispEmp  = u?.employee_id  || p.assigned_employee_id  || '';
       const dispGrp  = u?.group        || p.assigned_group        || '';
@@ -2093,6 +2134,11 @@ function renderAdminUsers(){
     const grpCell=isSysAdmin?'<span style="color:var(--gray3)">-</span>':esc(u.group||'');
     const knoxCell=isSysAdmin?'<span style="color:var(--gray3)">-</span>':esc(u.knox_account||'');
     const regCell=isSysAdmin?'<span style="color:var(--gray3)">-</span>':esc(u.created_at||'');
+    // 라이선스 등록 버튼: 미배정 일반사용자에게만 표시
+    const licRegCell=isSysAdmin?'<span style="color:var(--gray3)">-</span>'
+      :(!activeLic
+        ?`<button class="btn btn-p btn-sm" onclick="openAssignLicModal(${u.id})">📋 라이선스 등록</button>`
+        :'<span style="font-size:10px;color:var(--gray3)">배정 완료</span>');
     return `<tr style="${isSysAdmin?'background:#EFF6FF;':''}">
       <td>${u.id}</td>
       <td><strong>${esc(u.name)}</strong></td>
@@ -2103,6 +2149,7 @@ function renderAdminUsers(){
       <td style="text-align:center">${u.is_active?'✅':'❌'}</td>
       <td>${regCell}</td>
       <td style="text-align:center;line-height:1.6">${licCell}</td>
+      <td style="text-align:center">${licRegCell}</td>
       <td style="text-align:center">${delCell}</td>
     </tr>`;
   }).join('');
@@ -2290,18 +2337,20 @@ function renderAdminLic(){
   const de=document.getElementById('al_date');if(de&&!de.value)de.value=td();
   // List
   document.getElementById('al_body').innerHTML=DB.pools.map(p=>{
-    const lic=DB.licenses.find(l=>l.pool_id===p.id&&l.status==='active');
+    const isDeleted=p.is_license_deleted;
+    const lic=!isDeleted?DB.licenses.find(l=>l.pool_id===p.id&&l.status==='active'):null;
     const u=lic?gU(lic.user_id):null;
-    // License 삭제: 배정 여부 관계없이 관리자가 가능 (시리얼/유형 유지, 사용자 해제)
-    // 완전 삭제: 행 자체 삭제
-    const isDeleted=p.is_license_deleted; // flag for soft-delete state
+    // 배정상태: 삭제됨은 가용으로 표시 (라이선스 행은 유지)
+    const statusBadge=p.is_assigned
+      ?'<span class="badge bass">✅ 배정됨</span>'
+      :'<span class="badge bav">📦 가용</span>';
     return `<tr class="${p.is_assigned?'ras':''}${isDeleted?' rv':''}">
       <td style="font-family:monospace;font-size:11px">${esc(p.serial_number)}</td>
       <td>${esc(p.license_type)}</td>
       <td>${esc(p.registered_date||'-')}</td>
-      <td>${isDeleted?'<span class="badge" style="background:var(--red-l);color:var(--red)">🗑️ 삭제됨</span>':`<span class="badge ${p.is_assigned?'bass':'bav'}">${p.is_assigned?'✅ 배정됨':'📦 가용'}</span>`}</td>
-      <td>${esc(u?.name||'-')}</td>
-      <td>${esc(u?.employee_id||'-')}</td>
+      <td>${statusBadge}</td>
+      <td>${isDeleted?'':esc(u?.name||p.assigned_user_name||'-')}</td>
+      <td>${isDeleted?'':esc(u?.employee_id||p.assigned_employee_id||'-')}</td>
       <td style="font-size:11px">${esc(p.registered_by||'-')}</td>
       <td style="font-size:11px">${esc(p.remark||'')}</td>
       <td style="text-align:center">${isDeleted?'<span style="font-size:10px;color:var(--gray3)">삭제됨</span>':`<button class="btn btn-d btn-sm" onclick="licSoftDelete(${p.id})">License 삭제</button>`}</td>
@@ -2327,22 +2376,27 @@ function adminAddLic(){
   toast(`✅ ${serial} 등록 완료 — Pool 관리에 즉시 반영됩니다.`);
 }
 
-// License 삭제: 시리얼번호/유형은 유지, 사용자 배정만 해제 (배정됨 상태도 관리자 삭제 가능)
+// License 삭제(소프트): 라이선스 행 유지, 배정 해제, 배정상태→가용 표시
 function licSoftDelete(poolId){
   const p=gP(poolId);
   if(!p){toast('라이선스를 찾을 수 없습니다.','e');return;}
-  const msg=p.is_assigned?`'${p.serial_number}' 은 현재 배정 중입니다.\nLicense 삭제 시 배정이 해제됩니다.\n계속하시겠습니까?`:`'${p.serial_number}' 라이선스를 삭제 처리하시겠습니까?\n(시리얼번호와 유형은 목록에 유지됩니다.)`;
+  const msg=p.is_assigned
+    ?`'${p.serial_number}' 은 현재 배정 중입니다.\nLicense 삭제 시 배정이 해제되며 배정상태가 가용으로 변경됩니다.\n계속하시겠습니까?`
+    :`'${p.serial_number}' 라이선스를 삭제 처리하시겠습니까?\n(목록은 유지되며 배정상태가 가용으로 변경됩니다.)`;
   if(!confirm(msg))return;
-  // 활성 라이선스 회수
-  if(p.is_assigned){
-    const lic=DB.licenses.find(l=>l.pool_id===poolId&&l.status==='active');
-    if(lic){lic.status='revoked';lic.revoked_date=td();}
-    p.is_assigned=false;
-  }
-  p.is_license_deleted=true; // soft-delete 플래그
+  // 활성 라이선스 회수 (배정 여부 관계없이 모두 처리)
+  DB.licenses.filter(l=>l.pool_id===poolId&&l.status==='active')
+    .forEach(l=>{l.status='revoked';l.revoked_date=td();});
+  // 배정 정보 완전 초기화 → 가용 상태
+  p.is_assigned=false;
+  p.assigned_user_name='';
+  p.assigned_employee_id='';
+  p.assigned_group='';
+  p.assigned_knox='';
+  p.is_license_deleted=true; // 행 유지 플래그 (삭제 버튼 비활성화용)
   addLog('DELETE','license_pool',poolId,`License 삭제(소프트): ${p.serial_number} (${p.license_type})`);
   saveDB();renderAdminLic();renderAdminUsers();renderPool();renderDashboard();
-  toast(`🗑️ ${p.serial_number} License 삭제 완료 (목록 유지)`,'w');
+  toast(`✅ ${p.serial_number} License 삭제 완료 — 배정상태: 가용`);
 }
 
 // 완전 삭제: 해당 행 전체 삭제
@@ -2375,6 +2429,87 @@ function renderSys(){
   document.getElementById('sys_stats').innerHTML=[['사용자',DB.users.length],['Pool',DB.pools.length],['라이선스',DB.licenses.length],['요청',DB.requests.length],['감사 로그',DB.audit_logs.length]].map(([l,v])=>`<div class="mc"><div class="mv">${v}</div><div class="ml">${l}</div></div>`).join('');
 }
 
+
+
+/* ═══════════════════════════════════════
+   관리자 라이선스 등록 모달 (사용자 관리 탭)
+═══════════════════════════════════════ */
+let _almUserId = null;
+
+function openAssignLicModal(uid){
+  const u = gU(uid);
+  if(!u){ toast('사용자를 찾을 수 없습니다.','e'); return; }
+  _almUserId = uid;
+  document.getElementById('alm_user_info').innerHTML =
+    `👤 <strong>${esc(u.name)}</strong> (${esc(u.employee_id)}) — ${esc(u.group||'-')}`;
+  document.getElementById('alm_type').value = '';
+  document.getElementById('alm_serial').innerHTML = '<option value="">— 유형을 먼저 선택하세요 —</option>';
+  document.getElementById('alm_avail_badge').textContent = '';
+  document.getElementById('alm_date').value = td();
+  document.getElementById('alm_remark').value = '';
+  document.getElementById('alm_err').innerHTML = '';
+  document.getElementById('assignLicOverlay').style.display = 'flex';
+}
+
+function closeAssignLicModal(){
+  document.getElementById('assignLicOverlay').style.display = 'none';
+  _almUserId = null;
+}
+
+function refreshAlmSerial(){
+  const lt = document.getElementById('alm_type').value;
+  const sel = document.getElementById('alm_serial');
+  const badge = document.getElementById('alm_avail_badge');
+  let avail = DB.pools.filter(p=>!p.is_assigned && !p.is_license_deleted && p.status==='active');
+  if(lt) avail = avail.filter(p=>p.license_type===lt);
+  sel.innerHTML = '<option value="">— 시리얼번호 선택 —</option>'
+    + avail.map(p=>`<option value="${p.id}">[${p.license_type}] ${esc(p.serial_number)}</option>`).join('');
+  if(badge) badge.textContent = `가용 ${avail.length}건`;
+}
+
+function confirmAssignLic(){
+  const uid = _almUserId;
+  const lt  = document.getElementById('alm_type').value;
+  const pid = parseInt(document.getElementById('alm_serial').value);
+  const date= document.getElementById('alm_date').value;
+  const rmk = document.getElementById('alm_remark').value.trim();
+  const err = document.getElementById('alm_err');
+
+  if(!lt)  { err.innerHTML='<div class="err-box">라이선스 유형을 선택하세요.</div>'; return; }
+  if(!pid) { err.innerHTML='<div class="err-box">시리얼번호를 선택하세요.</div>'; return; }
+  if(!date){ err.innerHTML='<div class="err-box">등록일자를 입력하세요.</div>'; return; }
+  err.innerHTML = '';
+
+  const u = gU(uid);
+  const p = gP(pid);
+  if(!u||!p){ err.innerHTML='<div class="err-box">데이터 오류. 다시 시도하세요.</div>'; return; }
+
+  // Pool 배정 처리
+  p.is_assigned = true;
+  p.is_license_deleted = false;
+  p.assigned_user_name  = u.name;
+  p.assigned_employee_id= u.employee_id;
+  p.assigned_group      = u.group||'';
+  p.assigned_knox       = u.knox_account||'';
+
+  // License 레코드 생성
+  DB.licenses.push({
+    id: DB.nextId.license++,
+    user_id: uid,
+    pool_id: pid,
+    status: 'active',
+    assigned_date: date,
+    revoked_date: '',
+    remark: rmk,
+    assigned_by: CU?.name||'Admin'
+  });
+
+  addLog('CREATE','licenses',null,`라이선스 등록(관리자): ${p.serial_number} → ${u.name}(${u.employee_id})`);
+  saveDB();
+  closeAssignLicModal();
+  renderAdminUsers(); renderAdminLic(); renderPool(); renderDashboard();
+  toast(`✅ ${u.name}에게 ${p.serial_number} 라이선스 등록 완료`);
+}
 
 /* ═══════════════════════════════════════
    LOGIN NOTICE (로그인 공지 문구)
@@ -2427,6 +2562,23 @@ function cancelLoginNotice(){
    INIT
 ═══════════════════════════════════════ */
 // Set today as default for date inputs on load
+document.addEventListener('keydown',e=>{
+  if(e.key==='F5'){
+    e.preventDefault();
+    // 로그인 상태 + 현재 페이지 유지한 채 화면만 재렌더링
+    if(!CU){
+      // 로그인 전이면 로그인 화면 그대로 유지
+      renderLoginNotice();
+      return;
+    }
+    // 현재 활성 페이지 id 파악
+    const activePage=document.querySelector('.page.act');
+    const pageId=activePage?activePage.id.replace('page-',''):'dashboard';
+    nav(pageId);
+    toast('🔄 화면이 새로고침 되었습니다.');
+  }
+});
+
 document.addEventListener('DOMContentLoaded',()=>{
   const ns=document.getElementById('ns_date');if(ns)ns.value=td();
   const al=document.getElementById('al_date');if(al)al.value=td();
