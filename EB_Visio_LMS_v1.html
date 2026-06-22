@@ -393,6 +393,12 @@ textarea.fc{resize:vertical;min-height:80px}
       <div class="search-wrap">
         <input class="search-input" id="gSearch" placeholder="🔎 이름 또는 사번 검색..." oninput="onGS(this.value)">
       </div>
+      <!-- 동기화 인디케이터 (로그인 후 표시) -->
+      <div id="syncIndicator" style="display:none;align-items:center;gap:6px;font-size:11px;color:var(--gray3);white-space:nowrap;margin-right:4px">
+        <span id="syncDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#22C55E;transition:background .3s"></span>
+        <span id="syncLabel">공유됨 ✓</span>
+      </div>
+      <button id="syncBtn" title="지금 동기화" onclick="syncFromShared(false)" style="display:none;background:none;border:1px solid var(--gray4);border-radius:var(--rxs);padding:4px 9px;font-size:12px;cursor:pointer;color:var(--gray2)" onmouseover="this.style.background='var(--gray5)'" onmouseout="this.style.background='none'">🔄</button>
       <div class="user-badge" id="topBadge"></div>
       <button class="logout-btn" onclick="doLogout()">로그아웃</button>
     </div>
@@ -776,15 +782,19 @@ textarea.fc{resize:vertical;min-height:80px}
           <!-- Sys -->
           <div class="tab-pane" id="admin-tab-sys">
             <div class="g3" style="margin-bottom:14px">
-              <div class="mc"><div class="mv" style="font-size:14px">IndexedDB</div><div class="ml">저장소</div></div>
-              <div class="mc"><div class="mv" style="font-size:14px">eb_visio_lms_db</div><div class="ml">저장소 키</div></div>
+              <div class="mc"><div class="mv" style="font-size:13px">🌐 공유 Storage</div><div class="ml">저장소 방식</div></div>
+              <div class="mc"><div class="mv" style="font-size:11px;word-break:break-all">eb_lms_shared_db</div><div class="ml">저장소 키</div></div>
               <div class="mc"><div class="mv" id="sys_size">-</div><div class="ml">저장 크기</div></div>
             </div>
-            <div class="info-box">💾 모든 데이터는 <strong>IndexedDB</strong>에 저장되며, 브라우저 캐시를 삭제해도 유지됩니다.<br>⚠️ 데이터를 삭제하려면 아래 '데이터 초기화' 버튼을 사용하세요.</div>
+            <div class="info-box">🌐 모든 데이터는 <strong>공유 Storage</strong>에 저장되어 여러 브라우저·사용자가 동일한 데이터를 공유합니다.<br>🔄 화면 이동·F5·탭 포커스 복귀 시 자동 동기화되며, <strong>10초마다</strong> 백그라운드 폴링이 실행됩니다.</div>
+            <div style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <button class="btn btn-p btn-sm" onclick="syncFromShared(false).then(()=>renderSys())">🔄 지금 동기화</button>
+              <span id="sys_sync_time" style="font-size:11px;color:var(--gray3)"></span>
+            </div>
             <div class="st">DB 통계</div>
             <div class="mrow" id="sys_stats" style="grid-template-columns:repeat(5,1fr)"></div>
             <div style="margin-top:14px">
-              <button class="btn btn-d btn-sm" onclick="if(confirm(&#39;모든 데이터를 초기화하시겠습니까?&#39;)){idbSet(null).then(()=&gt;{localStorage.removeItem(&#39;eb_lms&#39;);location.reload()});}">🗑️ 데이터 초기화</button>
+              <button class="btn btn-d btn-sm" onclick="if(confirm('모든 공유 데이터를 초기화하시겠습니까?\n이 작업은 모든 사용자에게 영향을 줍니다.')){window.storage.delete(SHARED_KEY,true).then(()=>{localStorage.removeItem('eb_lms');location.reload();});}">🗑️ 데이터 초기화</button>
             </div>
           </div>
         </div>
@@ -796,79 +806,127 @@ textarea.fc{resize:vertical;min-height:80px}
 
 <script>
 /* ═══════════════════════════════════════
-   STORAGE — IndexedDB (캐시 삭제 후에도 유지)
-   localStorage는 브라우저 캐시 삭제 시 소실되므로
-   IndexedDB를 사용합니다. (localStorage는 fallback용으로만 사용)
+   STORAGE — window.storage 공유 저장소
+   여러 브라우저/사용자 간 데이터 공유를 위해
+   window.storage(shared=true) API를 사용합니다.
+   ▸ F5 새로고침 / 화면 이동 / 10초 폴링 / 탭 복귀 시 자동 동기화
 ═══════════════════════════════════════ */
-const SK = 'eb_lms';
-const IDB_NAME = 'eb_visio_lms_db';
-const IDB_STORE = 'main';
-const IDB_KEY = 'db_data';
-let _idb = null;
+const SHARED_KEY = 'eb_lms_shared_db';
+let _syncTimer   = null;   // 폴링 타이머
+let _lastSyncSig = '';     // 마지막 동기화 서명(변경 감지용)
 
-function openIDB(){
-  return new Promise((resolve,reject)=>{
-    if(_idb){resolve(_idb);return;}
-    const req=indexedDB.open(IDB_NAME,1);
-    req.onupgradeneeded=e=>{
-      const db=e.target.result;
-      if(!db.objectStoreNames.contains(IDB_STORE))
-        db.createObjectStore(IDB_STORE);
-    };
-    req.onsuccess=e=>{_idb=e.target.result;resolve(_idb);};
-    req.onerror=e=>{console.warn('IDB open error',e);reject(e);};
-  });
-}
-
-function idbGet(){
-  return openIDB().then(db=>new Promise((resolve,reject)=>{
-    const tx=db.transaction(IDB_STORE,'readonly');
-    const req=tx.objectStore(IDB_STORE).get(IDB_KEY);
-    req.onsuccess=()=>resolve(req.result??null);
-    req.onerror=()=>resolve(null);
-  })).catch(()=>null);
-}
-
-function idbSet(val){
-  return openIDB().then(db=>new Promise((resolve,reject)=>{
-    const tx=db.transaction(IDB_STORE,'readwrite');
-    tx.objectStore(IDB_STORE).put(val,IDB_KEY);
-    tx.oncomplete=()=>resolve();
-    tx.onerror=e=>{console.warn('IDB write error',e);resolve();};
-  })).catch(()=>{});
-}
-
-function loadDB(){
-  // 동기 fallback: localStorage (앱 초기 로드용)
+/* ── 공유 저장소 읽기 ── */
+async function sharedGet(){
   try{
-    const raw=localStorage.getItem(SK);
-    if(raw) return JSON.parse(raw);
-  }catch(e){}
+    const r = await window.storage.get(SHARED_KEY, true);
+    return (r && r.value) ? JSON.parse(r.value) : null;
+  }catch(e){ console.warn('[LMS] sharedGet error',e); return null; }
+}
+
+/* ── 공유 저장소 쓰기 ── */
+async function sharedSet(data){
+  try{
+    const json = JSON.stringify(data);
+    await window.storage.set(SHARED_KEY, json, true);
+    _lastSyncSig = _makeSig(data);
+  }catch(e){ console.warn('[LMS] sharedSet error',e); }
+}
+
+/* ── 변경 감지용 간단 서명 ── */
+function _makeSig(data){
+  return (data?.nextId?.log||0)+'_'+(data?.audit_logs?.length||0);
+}
+
+/* ── localStorage fallback (공유 저장소 미지원 환경) ── */
+function loadDB(){
+  try{ const r=localStorage.getItem('eb_lms'); if(r) return JSON.parse(r); }catch(e){}
   return null;
 }
 
+/* ── saveDB: 공유 저장소 + localStorage 캐시 동시 저장 ── */
 function saveDB(){
-  // IndexedDB (주 저장소) + localStorage (동기 캐시)
-  const data=JSON.stringify(DB);
-  idbSet(data);
-  try{ localStorage.setItem(SK,data); }catch(e){}
+  sharedSet(DB);   // 공유 저장소(비동기)
+  try{ localStorage.setItem('eb_lms', JSON.stringify(DB)); }catch(e){}
 }
 
-// 앱 시작 시 IndexedDB에서 최신 데이터 로드 (localStorage보다 우선)
-async function initDBFromIDB(){
-  try{
-    const raw=await idbGet();
-    if(raw){
-      const parsed=JSON.parse(raw);
-      // IndexedDB 데이터가 있으면 DB에 반영
-      Object.assign(DB,parsed);
-      // localStorage도 동기화
-      try{localStorage.setItem(SK,raw);}catch(e){}
-    }
-  }catch(e){ console.warn('IDB load error',e); }
-  // IDB 로드 후 시스템 관리자 항상 보장
-  ensureSystemAdmin();
+/* ── 현재 열린 페이지 재렌더링 ── */
+function refreshCurrentPage(){
+  const act = document.querySelector('.page.act');
+  if(!act || !CU) return;
+  const pid = act.id?.replace('page-','');
+  const fn  = {dashboard:renderDashboard,apply:renderApply,revoke:renderRevoke,
+               status:renderStatus,approval:renderApproval,admin:renderAdmin}[pid];
+  if(fn) fn();
 }
+
+/* ── 공유 저장소 → 로컬 DB 동기화 (변경이 있을 때만 UI 갱신) ── */
+async function syncFromShared(silent=false){
+  // 동기화 인디케이터 업데이트
+  _syncUI('syncing');
+  try{
+    const remote = await sharedGet();
+    if(!remote){ _syncUI('ok'); return; }
+    const sig = _makeSig(remote);
+    if(sig === _lastSyncSig){ _syncUI('ok'); return; }  // 변경 없음
+    _lastSyncSig = sig;
+    Object.assign(DB, remote);
+    try{ localStorage.setItem('eb_lms', JSON.stringify(remote)); }catch(e){}
+    if(CU){
+      const fresh = DB.users.find(u=>u.id===CU.id);
+      if(fresh) CU = fresh;
+      refreshCurrentPage();
+      if(!silent) toast('🔄 데이터가 동기화되었습니다.');
+    }
+    _syncUI('ok');
+  }catch(e){
+    console.warn('[LMS] syncFromShared error',e);
+    _syncUI('err');
+  }
+}
+
+/* ── 동기화 상태 인디케이터 ── */
+function _syncUI(state){
+  const dot = document.getElementById('syncDot');
+  const lbl = document.getElementById('syncLabel');
+  if(!dot) return;
+  const map = {
+    syncing:['#F59E0B','동기화 중…'],
+    ok:     ['#22C55E','공유됨 ✓'],
+    err:    ['#EF4444','동기화 오류']
+  };
+  const [color, text] = map[state]||map.ok;
+  dot.style.background = color;
+  if(lbl) lbl.textContent = text;
+}
+
+/* ── 10초 폴링 자동 동기화 시작 ── */
+function startAutoSync(){
+  if(_syncTimer) clearInterval(_syncTimer);
+  _syncTimer = setInterval(()=>syncFromShared(true), 10000);
+}
+
+/* ── 앱 시작 시: 공유 저장소 우선 로드, 없으면 localStorage → 공유 저장소 업로드 ── */
+async function initDBFromIDB(){
+  const remote = await sharedGet();
+  if(remote){
+    Object.assign(DB, remote);
+    _lastSyncSig = _makeSig(remote);
+    try{ localStorage.setItem('eb_lms', JSON.stringify(remote)); }catch(e){}
+  } else {
+    const local = loadDB();
+    if(local){ Object.assign(DB, local); await sharedSet(DB); }
+  }
+  ensureSystemAdmin();   // 시스템 관리자 항상 보장
+  startAutoSync();        // 백그라운드 폴링 시작
+}
+
+/* ── 탭 포커스 복귀 시 즉시 동기화 ── */
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible') syncFromShared(true);
+});
+
+/* ── F5/닫기 직전 저장 보장 ── */
+window.addEventListener('beforeunload', ()=>{ saveDB(); });
 
 /* ═══════════════════════════════════════
    INITIAL DATA
@@ -1143,17 +1201,23 @@ function doLogin(){
   document.getElementById('sb_chip').style.display='block';
   document.getElementById('sb_chip').innerHTML=`✅ <strong>${esc(u.name)}</strong><br><span style="font-size:10px;color:#888">${u.is_admin?'🔑 관리자':'👤 일반사용자'}</span>`;
   document.getElementById('topBadge').innerHTML=`<strong>${esc(u.name)}</strong>&nbsp;(${esc(u.employee_id)})`;
+  // 동기화 인디케이터 표시
+  document.getElementById('syncIndicator').style.display='flex';
+  document.getElementById('syncBtn').style.display='inline-block';
   nav('dashboard');
 }
 
 function doLogout(){
   CU=null;
+  if(_syncTimer){ clearInterval(_syncTimer); _syncTimer=null; }
   document.getElementById('loginOverlay').style.display='flex';
   document.getElementById('li_name').value='';
   document.getElementById('li_emp').value='';
   document.getElementById('li_err').textContent='';
   document.getElementById('sb_chip').style.display='none';
   document.getElementById('topBadge').innerHTML='';
+  document.getElementById('syncIndicator').style.display='none';
+  document.getElementById('syncBtn').style.display='none';
 }
 
 /* ═══════════════════════════════════════
@@ -1168,7 +1232,8 @@ function nav(page){
   document.getElementById('pageTitle').textContent=PT[page]||page;
   const renders={dashboard:renderDashboard,apply:renderApply,revoke:renderRevoke,
     status:renderStatus,approval:renderApproval,admin:renderAdmin};
-  if(renders[page])renders[page]();
+  // 화면 이동 시 공유 저장소 동기화 후 렌더링
+  syncFromShared(true).then(()=>{ if(renders[page]) renders[page](); });
 }
 
 document.querySelectorAll('.mi').forEach(m=>m.addEventListener('click',()=>nav(m.dataset.page)));
@@ -2427,6 +2492,8 @@ function renderSys(){
     document.getElementById('sys_size').textContent=sz>1024?`${(sz/1024).toFixed(1)} KB`:`${sz} B`;
   }catch(e){document.getElementById('sys_size').textContent='-';}
   document.getElementById('sys_stats').innerHTML=[['사용자',DB.users.length],['Pool',DB.pools.length],['라이선스',DB.licenses.length],['요청',DB.requests.length],['감사 로그',DB.audit_logs.length]].map(([l,v])=>`<div class="mc"><div class="mv">${v}</div><div class="ml">${l}</div></div>`).join('');
+  const st=document.getElementById('sys_sync_time');
+  if(st) st.textContent='마지막 확인: '+new Date().toLocaleTimeString('ko-KR');
 }
 
 
@@ -2565,17 +2632,17 @@ function cancelLoginNotice(){
 document.addEventListener('keydown',e=>{
   if(e.key==='F5'){
     e.preventDefault();
-    // 로그인 상태 + 현재 페이지 유지한 채 화면만 재렌더링
     if(!CU){
-      // 로그인 전이면 로그인 화면 그대로 유지
       renderLoginNotice();
       return;
     }
-    // 현재 활성 페이지 id 파악
+    // 공유 저장소 동기화 후 현재 페이지 재렌더링
     const activePage=document.querySelector('.page.act');
     const pageId=activePage?activePage.id.replace('page-',''):'dashboard';
-    nav(pageId);
-    toast('🔄 화면이 새로고침 되었습니다.');
+    syncFromShared(false).then(()=>{
+      nav(pageId);
+      toast('🔄 공유 데이터가 동기화되었습니다.');
+    });
   }
 });
 
