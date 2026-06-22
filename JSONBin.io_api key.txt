@@ -1,1 +1,5 @@
+JSONBin Master Key (X-Master-Key)
 $2a$10$AnfRJklYwNs79NBLSvzdnea3IUCQEdvK.98YiahGPazxSMWmoQg06
+
+Bin ID
+6a39b74df5f4af5e291fcff3
