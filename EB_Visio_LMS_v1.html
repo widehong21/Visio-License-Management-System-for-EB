@@ -781,37 +781,22 @@ textarea.fc{resize:vertical;min-height:80px}
 
           <!-- Sys -->
           <div class="tab-pane" id="admin-tab-sys">
-            <!-- JSONBin 설정 카드 -->
-            <div class="card" style="max-width:640px;margin-bottom:16px;border:2px solid #BFDBFE">
+            <!-- JSONBin 연결 상태 카드 -->
+            <div class="card" style="max-width:640px;margin-bottom:16px;border:2px solid #BBF7D0">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
                 <span style="font-size:18px">🌐</span>
-                <span style="font-size:14px;font-weight:800;color:var(--gray1)">JSONBin.io 공유 동기화 설정</span>
-                <span id="jb_status_badge" style="margin-left:auto;font-size:10px;font-weight:700;padding:2px 10px;border-radius:20px;background:#FEF3C7;color:#92400E">미설정</span>
+                <span style="font-size:14px;font-weight:800;color:var(--gray1)">JSONBin.io 공유 동기화</span>
+                <span id="jb_status_badge" style="margin-left:auto;font-size:10px;font-weight:700;padding:2px 10px;border-radius:20px;background:#DCFCE7;color:#14532D">✅ 고정 설정 완료</span>
               </div>
-              <div style="background:#EFF6FF;border-left:4px solid var(--blue);border-radius:var(--rs);padding:10px 14px;margin-bottom:14px;font-size:12px;line-height:1.7">
-                📋 <strong>설정 방법:</strong><br>
-                1) <a href="https://jsonbin.io" target="_blank" style="color:var(--blue)">jsonbin.io</a>에서 무료 회원가입<br>
-                2) Dashboard → <strong>API Keys</strong> → Master Key 복사<br>
-                3) 아래에 붙여넣고 <strong>저장 및 연결</strong> 클릭<br>
-                4) 연결 성공 시 여러 PC/브라우저에서 실시간 동기화!
+              <div style="background:#F0FDF4;border-left:4px solid var(--green);border-radius:var(--rs);padding:10px 14px;margin-bottom:14px;font-size:12px;line-height:1.7;color:#14532D">
+                ✅ <strong>API Key와 Bin ID가 파일에 고정 내장되어 있습니다.</strong><br>
+                어느 PC에서 이 HTML 파일을 열어도 동일한 JSONBin에 자동 연결되어 모든 데이터가 실시간 공유됩니다.
               </div>
-              <div class="fg">
-                <label class="fl">JSONBin Master Key (X-Master-Key)</label>
-                <div style="display:flex;gap:8px">
-                  <input class="fc" id="jb_key_input" type="password" placeholder="$2a$10$......" style="font-family:monospace;font-size:12px">
-                  <button class="btn btn-g btn-sm" onclick="toggleJbKeyVisibility()" style="white-space:nowrap" id="jb_eye_btn">👁 보기</button>
-                </div>
+              <div class="g2" style="margin-bottom:12px">
+                <div><div class="fl">API Key</div><div style="font-family:monospace;font-size:11px;color:var(--gray3);background:var(--gray5);padding:6px 10px;border-radius:var(--rs);word-break:break-all">••••••••••••••••••••••••••••••••••</div></div>
+                <div><div class="fl">Bin ID</div><div style="font-family:monospace;font-size:12px;color:#1565C0;background:var(--blue-l);padding:6px 10px;border-radius:var(--rs)" id="jb_bin_display">6a39b74df5f4af5e291fcff3</div></div>
               </div>
-              <div class="fg">
-                <label class="fl">Bin ID <span style="font-size:10px;font-weight:400;color:var(--gray3)">(최초 연결 후 자동 생성 — 직접 입력도 가능)</span></label>
-                <input class="fc" id="jb_bin_input" placeholder="예) 64a1b2c3d4e5f6a7b8c9d0e1" style="font-family:monospace;font-size:12px">
-              </div>
-              <div id="jb_conn_result" style="margin-bottom:8px"></div>
-              <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button class="btn btn-p" onclick="saveJbConfig()">💾 저장 및 연결</button>
-                <button class="btn btn-g" onclick="syncFromShared(false).then(()=>{renderSys();toast('🔄 동기화 완료')})">🔄 지금 동기화</button>
-                <button class="btn btn-d btn-sm" onclick="resetJbConfig()">🗑️ 연결 해제</button>
-              </div>
+              <button class="btn btn-g" onclick="syncFromShared(false).then(()=>{renderSys();toast('🔄 동기화 완료')})">🔄 지금 동기화</button>
             </div>
 
             <!-- 통계 -->
@@ -839,40 +824,28 @@ textarea.fc{resize:vertical;min-height:80px}
 /* ═══════════════════════════════════════════════════════════════
    STORAGE — JSONBin.io 무료 공유 저장소 (실제 멀티유저 동기화)
    ─────────────────────────────────────────────────────────────
-   ▸ JSONBin.io 무료 계정 REST API 사용
-   ▸ 여러 PC/브라우저에서 동시 접속 → 데이터 공유 가능
+   ▸ API Key 고정 내장 — 어느 PC에서 열어도 자동 동기화
+   ▸ 여러 PC/브라우저 동시 접속 시 데이터 실시간 공유
    ▸ 15초 폴링 / 탭 복귀 / F5 / 저장 시 즉시 동기화
-   ─────────────────────────────────────────────────────────────
-   ※ 최초 1회 설정 필요:
-     1) https://jsonbin.io 에서 무료 회원가입
-     2) Dashboard → API Keys → 복사
-     3) 아래 JSONBIN_API_KEY 에 붙여넣기
-     4) 파일을 저장하고 첫 실행 시 BIN이 자동 생성됨
 ═══════════════════════════════════════════════════════════════ */
 
-/* ▼▼▼ 선택사항: 여기에 직접 API Key를 입력하거나, 앱 내 [관리자 설정 → 시스템 정보] 탭에서 설정 가능 ▼▼▼ */
-const JSONBIN_API_KEY_DEFAULT = '';  // 직접 입력 시: '$2a$10$...'
-/* ▲▲▲ https://jsonbin.io → Dashboard → API Keys ▲▲▲ */
+/* ── JSONBin.io API Key (고정) ── */
+const JSONBIN_API_KEY = '$2a$10$AnfRJklYwNs79NBLSvzdnea3IUCQEdvK.98YiahGPazxSMWmoQg06';
 
-const JSONBIN_BASE    = 'https://api.jsonbin.io/v3';
-const JSONBIN_BIN_KEY = 'eb_lms_bin_id';  // localStorage에 bin id 캐시
+const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
+const JSONBIN_BIN_ID = '6a39b74df5f4af5e291fcff3';  // 고정 Bin ID
 
-// localStorage 저장 우선, 없으면 하드코딩 값 사용
-let JSONBIN_API_KEY = localStorage.getItem('eb_jb_key') || JSONBIN_API_KEY_DEFAULT;
-
-let _syncTimer    = null;
-let _lastSyncSig  = '';
-let _binId        = localStorage.getItem(JSONBIN_BIN_KEY) || '';
-let _saveQueue    = null;   // 연속 저장 throttle
-let _apiReady     = false;  // API Key 설정 여부
+let _syncTimer   = null;
+let _lastSyncSig = '';
+let _binId       = JSONBIN_BIN_ID;   // 항상 고정값 사용
+let _saveQueue   = null;
+let _apiReady    = false;
 
 /* ── API Key 유효성 체크 ── */
 function _checkApiKey(){
-  // 최신 값 재확인 (런타임에 변경 가능)
-  JSONBIN_API_KEY = localStorage.getItem('eb_jb_key') || JSONBIN_API_KEY_DEFAULT;
-  if(!JSONBIN_API_KEY || JSONBIN_API_KEY.includes('XXXX') || JSONBIN_API_KEY.length < 20){
+  if(!JSONBIN_API_KEY || JSONBIN_API_KEY.length < 20){
     _apiReady = false;
-    console.warn('[LMS] JSONBin API Key가 설정되지 않았습니다. 로컬 전용 모드로 동작합니다.');
+    console.warn('[LMS] JSONBin API Key 오류');
     _syncUI('local');
     return false;
   }
@@ -885,25 +858,6 @@ function _makeSig(data){
   return (data?.nextId?.log||0)+'_'+(data?.audit_logs?.length||0)+'_'+(data?.nextId?.license||0);
 }
 
-/* ── JSONBin: 새 Bin 생성 (최초 1회) ── */
-async function _createBin(data){
-  const res = await fetch(`${JSONBIN_BASE}/b`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Master-Key': JSONBIN_API_KEY,
-      'X-Bin-Name':   'EB-Visio-LMS',
-      'X-Bin-Private':'false'
-    },
-    body: JSON.stringify(data)
-  });
-  if(!res.ok) throw new Error(`Bin 생성 실패: ${res.status}`);
-  const json = await res.json();
-  _binId = json.metadata?.id || json.id || '';
-  localStorage.setItem(JSONBIN_BIN_KEY, _binId);
-  console.log('[LMS] Bin 생성 완료:', _binId);
-  return _binId;
-}
 
 /* ── JSONBin: 데이터 읽기 ── */
 async function sharedGet(){
@@ -923,19 +877,15 @@ async function sharedGet(){
 async function sharedSet(data){
   if(!_checkApiKey()) return;
   try{
-    if(!_binId){
-      await _createBin(data);
-    } else {
-      const res = await fetch(`${JSONBIN_BASE}/b/${_binId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': JSONBIN_API_KEY
-        },
-        body: JSON.stringify(data)
-      });
-      if(!res.ok) throw new Error(`PUT 실패: ${res.status}`);
-    }
+    const res = await fetch(`${JSONBIN_BASE}/b/${_binId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_API_KEY
+      },
+      body: JSON.stringify(data)
+    });
+    if(!res.ok) throw new Error(`PUT 실패: ${res.status}`);
     _lastSyncSig = _makeSig(data);
   }catch(e){ console.warn('[LMS] sharedSet error',e); _syncUI('err'); }
 }
@@ -1012,60 +962,27 @@ function startAutoSync(){
   _syncTimer = setInterval(()=>syncFromShared(true), 15000);
 }
 
-/* ── 앱 시작: 공유 저장소 우선, 없으면 로컬 → 업로드 ── */
+/* ── 앱 시작: 공유 저장소에서 최신 데이터 로드 ── */
 async function initDBFromIDB(){
   _checkApiKey();
   if(_apiReady){
-    // Bin ID 없는 경우: 로컬 데이터로 새 Bin 생성
-    if(!_binId){
-      const local = loadDB();
-      const initData = local || DB;
-      await _createBin(initData);
-      Object.assign(DB, initData);
-      _lastSyncSig = _makeSig(DB);
+    const remote = await sharedGet();
+    if(remote){
+      Object.assign(DB, remote);
+      _lastSyncSig = _makeSig(remote);
+      try{ localStorage.setItem('eb_lms', JSON.stringify(remote)); }catch(e){}
     } else {
-      const remote = await sharedGet();
-      if(remote){
-        Object.assign(DB, remote);
-        _lastSyncSig = _makeSig(remote);
-        try{ localStorage.setItem('eb_lms', JSON.stringify(remote)); }catch(e){}
-      } else {
-        const local = loadDB();
-        if(local){ Object.assign(DB, local); await sharedSet(DB); }
-      }
+      // JSONBin에 데이터 없으면 현재 DB를 업로드
+      const local = loadDB();
+      if(local) Object.assign(DB, local);
+      await sharedSet(DB);
     }
   } else {
-    // API Key 미설정 시 로컬 전용
     const local = loadDB();
     if(local) Object.assign(DB, local);
   }
   ensureSystemAdmin();
   startAutoSync();
-  // 설정 안내 배너 표시
-  if(!_apiReady) _showApiKeyBanner();
-}
-
-/* ── API Key 미설정 시 안내 배너 ── */
-function _showApiKeyBanner(){
-  const existing = document.getElementById('apiKeyBanner');
-  if(existing) return;
-  const banner = document.createElement('div');
-  banner.id = 'apiKeyBanner';
-  banner.style.cssText = `position:fixed;bottom:0;left:0;right:0;background:#1E293B;color:#F1F5F9;
-    padding:10px 20px;font-size:12px;z-index:99999;display:flex;align-items:center;gap:12px;
-    border-top:2px solid #F59E0B;`;
-  banner.innerHTML = `
-    <span style="font-size:16px">⚠️</span>
-    <span><strong>공유 동기화 미설정:</strong> 현재 이 PC에서만 데이터가 저장됩니다.
-    여러 사람이 함께 쓰려면 <code style="background:#334155;padding:1px 5px;border-radius:3px">JSONBIN_API_KEY</code>를
-    설정해야 합니다. →
-    <a href="https://jsonbin.io" target="_blank" style="color:#60A5FA;text-decoration:underline">jsonbin.io 무료 가입</a>
-    후 HTML 파일 상단 <code style="background:#334155;padding:1px 5px;border-radius:3px">JSONBIN_API_KEY</code> 변수에 입력하세요.</span>
-    <button onclick="document.getElementById('apiKeyBanner').remove()"
-      style="margin-left:auto;background:none;border:1px solid #475569;border-radius:4px;
-      color:#94A3B8;padding:3px 10px;cursor:pointer;font-size:11px;white-space:nowrap">닫기</button>
-  `;
-  document.body.appendChild(banner);
 }
 
 /* ── 탭 포커스 복귀 시 즉시 동기화 ── */
@@ -2643,58 +2560,16 @@ function renderSys(){
   const st=document.getElementById('sys_sync_time');
   if(st) st.textContent='마지막 확인: '+new Date().toLocaleTimeString('ko-KR');
   // JSONBin 상태 표시
-  const badge  = document.getElementById('jb_status_badge');
   const connEl = document.getElementById('sys_conn_state');
   const binEl  = document.getElementById('sys_bin_id');
-  const keyInp = document.getElementById('jb_key_input');
-  const binInp = document.getElementById('jb_bin_input');
   if(_apiReady && _binId){
-    if(badge){ badge.textContent='✅ 연결됨'; badge.style.cssText='margin-left:auto;font-size:10px;font-weight:700;padding:2px 10px;border-radius:20px;background:#DCFCE7;color:#14532D'; }
     if(connEl) connEl.textContent='✅ 연결됨';
   } else if(_apiReady && !_binId){
-    if(badge){ badge.textContent='⏳ Bin 생성 중'; badge.style.cssText='margin-left:auto;font-size:10px;font-weight:700;padding:2px 10px;border-radius:20px;background:#FEF3C7;color:#92400E'; }
-    if(connEl) connEl.textContent='⏳ Bin 생성 중';
+    if(connEl) connEl.textContent='⏳ 연결 중';
   } else {
-    if(badge){ badge.textContent='⚠️ 미설정'; badge.style.cssText='margin-left:auto;font-size:10px;font-weight:700;padding:2px 10px;border-radius:20px;background:#FEE2E2;color:#991B1B'; }
-    if(connEl) connEl.textContent='⚠️ 미설정 (로컬 전용)';
+    if(connEl) connEl.textContent='⚠️ API Key 오류';
   }
-  if(binEl) binEl.textContent=_binId||'(없음)';
-  // 현재 저장된 값 표시
-  if(keyInp && !keyInp.value){ const k=localStorage.getItem('eb_jb_key')||''; keyInp.value=k; }
-  if(binInp) binInp.value=_binId||'';
-}
-
-/* JSONBin 설정 저장 및 연결 */
-async function saveJbConfig(){
-  const key = document.getElementById('jb_key_input').value.trim();
-  const bin = document.getElementById('jb_bin_input').value.trim();
-  const res = document.getElementById('jb_conn_result');
-  if(!key){ res.innerHTML='<div class="err-box">API Key를 입력하세요.</div>'; return; }
-  // 임시로 적용
-  const prevKey = JSONBIN_API_KEY;
-  // JS 상수는 재할당 불가이므로 localStorage에 저장 후 reload
-  localStorage.setItem('eb_jb_key', key);
-  if(bin) localStorage.setItem(JSONBIN_BIN_KEY, bin);
-  res.innerHTML='<div class="suc-box">✅ 저장 완료! 설정을 적용하기 위해 페이지를 새로고침합니다…</div>';
-  setTimeout(()=>location.reload(), 1500);
-}
-
-/* JSONBin 연결 해제 */
-function resetJbConfig(){
-  if(!confirm('JSONBin 연결을 해제하시겠습니까?\n로컬 전용 모드로 전환됩니다.')) return;
-  localStorage.removeItem('eb_jb_key');
-  localStorage.removeItem(JSONBIN_BIN_KEY);
-  toast('🔌 연결 해제됨. 새로고침합니다…', 'w');
-  setTimeout(()=>location.reload(), 1200);
-}
-
-/* API Key 보이기/숨기기 */
-function toggleJbKeyVisibility(){
-  const inp = document.getElementById('jb_key_input');
-  const btn = document.getElementById('jb_eye_btn');
-  if(!inp) return;
-  inp.type = inp.type==='password' ? 'text' : 'password';
-  btn.textContent = inp.type==='password' ? '👁 보기' : '🙈 숨기기';
+  if(binEl) binEl.textContent = _binId||'(없음)';
 }
 
 /* 전체 데이터 초기화 */
