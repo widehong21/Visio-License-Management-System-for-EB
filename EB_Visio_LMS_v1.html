@@ -856,7 +856,11 @@ function _checkApiKey(){
 
 /* ── 변경 감지용 서명 ── */
 function _makeSig(data){
-  return (data?.nextId?.log||0)+'_'+(data?.audit_logs?.length||0)+'_'+(data?.nextId?.license||0);
+  const adminSig = (data?.users||[]).filter(u=>u.is_admin).map(u=>u.id).join(',');
+  return (data?.nextId?.log||0)+'_'+(data?.audit_logs?.length||0)+'_'+(data?.nextId?.license||0)
+    +'_'+(data?.requests?.length||0)+'_'+(data?.nextId?.request||0)
+    +'_'+(data?.users?.length||0)+'_'+(data?.nextId?.user||0)
+    +'_'+adminSig;
 }
 
 
