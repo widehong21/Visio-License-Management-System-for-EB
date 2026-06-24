@@ -240,7 +240,7 @@ textarea.fc{resize:vertical;min-height:80px}
 <div id="loginOverlay" style="display: flex;">
   <div class="login-card">
     
-    <h1>EB Visio LMS<span style="font-size:14px;font-weight:600;color:var(--gray3);margin-left:6px">(ver 1.0)</span></h1>
+    <h1>EB Visio LMS<span style="font-size:14px;font-weight:600;color:var(--gray3);margin-left:6px">(v1.0)</span></h1>
     <p>License Management System</p>
     <div class="login-field">
       <label>이름</label>
@@ -515,7 +515,7 @@ textarea.fc{resize:vertical;min-height:80px}
         <div id="appr_lock" class="lock" style="display:none">
           <div class="lock-ico">🔒</div><div class="lock-t">접근 권한 없음</div>
           <div class="lock-d">승인 관리 메뉴는 <strong>관리자만</strong> 접근할 수 있습니다.</div>
-          <div id="appr_admins" style="margin-top:14px;font-size:12.5px"></div>
+
         </div>
         <div id="appr_content">
           <div class="tab-bar">
@@ -856,7 +856,7 @@ function _checkApiKey(){
 
 /* ── 변경 감지용 서명 ── */
 function _makeSig(data){
-  return (data?.nextId?.log||0)+'_'+(data?.audit_logs?.length||0)+'_'+(data?.nextId?.license||0);
+  return (data?.nextId?.log||0)+'_'+(data?.audit_logs?.length||0)+'_'+(data?.nextId?.license||0)+'_'+(data?.intro_slides?.length??'x');
 }
 
 
@@ -927,13 +927,22 @@ async function syncFromShared(silent=false){
     _lastSyncSig = sig;
     Object.assign(DB, remote);
     try{ localStorage.setItem('eb_lms', JSON.stringify(remote)); }catch(e){}
-    /* intro_slides 동기화 수신 시 localStorage 캐시도 갱신 */
-    if(remote.intro_slides&&Array.isArray(remote.intro_slides)){
-      try{localStorage.setItem(_INTRO_SAVED_KEY,JSON.stringify(remote.intro_slides));}catch(e){}
-    } else {
-      /* 원격에 intro_slides 없으면 로컬 캐시도 제거 (초기화 동기화) */
-      try{localStorage.removeItem(_INTRO_SAVED_KEY);}catch(e){}
-    }
+    // intro_slides 동기화: DB에서 받은 슬라이드를 localStorage에도 반영
+    try{
+      if(Array.isArray(DB.intro_slides)&&DB.intro_slides.length){
+        localStorage.setItem(_INTRO_SAVED_KEY, JSON.stringify(DB.intro_slides));
+      } else if(DB.intro_slides!==undefined){
+        // 빈 배열(초기화) → localStorage도 삭제
+        localStorage.removeItem(_INTRO_SAVED_KEY);
+      }
+      // 팝업이 열려 있으면 현재 워킹셋도 갱신
+      const modal=document.getElementById('introModal');
+      if(modal&&modal.style.display==='flex'&&_introWS!==null){
+        _introWS=_getSavedSlides();
+        _introIdx=Math.max(0,Math.min(_introWS.length-1,_introIdx));
+        _renderIntroSlide(_introWS);_renderIntroThumbs(_introWS);_syncSaveBtn();
+      }
+    }catch(e){}
     if(CU){
       const fresh = DB.users.find(u=>u.id===CU.id);
       if(fresh) CU = fresh;
@@ -979,14 +988,22 @@ async function initDBFromIDB(){
       Object.assign(DB, remote);
       _lastSyncSig = _makeSig(remote);
       try{ localStorage.setItem('eb_lms', JSON.stringify(remote)); }catch(e){}
-      /* intro_slides 있으면 localStorage 캐시 갱신 */
-      if(remote.intro_slides&&Array.isArray(remote.intro_slides)){
-        try{localStorage.setItem(_INTRO_SAVED_KEY,JSON.stringify(remote.intro_slides));}catch(e){}
-      }
+      // intro_slides도 localStorage에 반영
+      try{
+        if(Array.isArray(DB.intro_slides)&&DB.intro_slides.length)
+          localStorage.setItem(_INTRO_SAVED_KEY, JSON.stringify(DB.intro_slides));
+        else if(DB.intro_slides!==undefined)
+          localStorage.removeItem(_INTRO_SAVED_KEY);
+      }catch(e){}
     } else {
       // JSONBin에 데이터 없으면 현재 DB를 업로드
       const local = loadDB();
       if(local) Object.assign(DB, local);
+      // localStorage의 intro_slides를 DB에 올려서 함께 업로드
+      try{
+        const ls=localStorage.getItem(_INTRO_SAVED_KEY);
+        if(ls){const a=JSON.parse(ls);if(Array.isArray(a)&&a.length)DB.intro_slides=a;}
+      }catch(e){}
       await sharedSet(DB);
     }
   } else {
@@ -2130,8 +2147,6 @@ function renderApproval(){
   document.getElementById('appr_lock').style.display=isAdm?'none':'block';
   document.getElementById('appr_content').style.display=isAdm?'block':'none';
   if(!isAdm){
-    const admins=DB.users.filter(u=>u.is_admin&&u.is_active);
-    document.getElementById('appr_admins').innerHTML=admins.length?`<strong>현재 등록된 관리자</strong><ul style="margin-top:6px;list-style:disc;padding-left:18px">${admins.map(a=>`<li>${esc(a.name)} (${esc(a.employee_id)}) — ${esc(a.group||'-')}</li>`).join('')}</ul>`:'';
     return;
   }
   renderPending();renderApprHist();
@@ -2783,17 +2798,23 @@ const _UNDO_MAX=20;
 let _introIdx=0,_introUndo=[],_introWS=null;
 
 function _getSavedSlides(){
-  /* DB.intro_slides 우선, 없으면 localStorage fallback, 그것도 없으면 기본 슬라이드 */
-  if(DB.intro_slides&&Array.isArray(DB.intro_slides)&&DB.intro_slides.length)
-    return DB.intro_slides.slice();
+  // DB.intro_slides 우선(JSONBin 동기화 대상), 없으면 localStorage, 없으면 기본값
+  try{
+    if(typeof DB!=='undefined'&&Array.isArray(DB.intro_slides)&&DB.intro_slides.length)
+      return DB.intro_slides.slice();
+  }catch(e){}
   try{var s=localStorage.getItem(_INTRO_SAVED_KEY);if(s){var a=JSON.parse(s);if(Array.isArray(a)&&a.length)return a;}}catch(e){}
   return[..._INTRO_SLIDES];
 }
 function _persistSaved(arr){
-  /* DB에 저장 → saveDB()가 JSONBin까지 동기화 */
-  DB.intro_slides = arr.slice();
-  saveDB();
-  /* localStorage에도 캐시 (오프라인 fallback) */
+  // DB.intro_slides에 저장 → saveDB()로 JSONBin까지 업로드
+  try{
+    if(typeof DB!=='undefined'){
+      DB.intro_slides=arr.slice();
+      if(typeof saveDB==='function') saveDB();
+    }
+  }catch(e){}
+  // localStorage에도 병행 저장(오프라인 fallback)
   try{localStorage.setItem(_INTRO_SAVED_KEY,JSON.stringify(arr));}catch(e){}
 }
 
@@ -3015,7 +3036,7 @@ function introGoto(i){
 function introSave(){
   if(!_introWS)return;
   _persistSaved(_introWS);_syncSaveBtn();
-  toast('💾 저장 완료 — 공유 저장소에 동기화됩니다.');
+  toast('💾 저장 완료 — 다른 PC에도 동기화됩니다.');
 }
 function introUndo(){
   if(!_introUndo.length)return;
@@ -3329,13 +3350,17 @@ function introDeleteAll(){
 function introResetSlides(){
   if(!confirm('원본 슬라이드로 초기화하시겠습니까?\n저장 데이터도 모두 삭제됩니다.'))return;
   _pushUndo(_introWS,_introIdx);
+  // localStorage + DB.intro_slides 모두 초기화 → JSONBin 반영
   localStorage.removeItem(_INTRO_SAVED_KEY);
-  /* DB에서도 슬라이드 필드 삭제 후 공유 저장소 반영 */
-  delete DB.intro_slides;
-  saveDB();
+  try{
+    if(typeof DB!=='undefined'){
+      DB.intro_slides=[];
+      if(typeof saveDB==='function') saveDB();
+    }
+  }catch(e){}
   _introWS=[..._INTRO_SLIDES];_introIdx=0;
   _renderIntroSlide(_introWS);_renderIntroThumbs(_introWS);_syncSaveBtn();
-  toast('🔄 원본 초기화 완료','w');
+  toast('🔄 원본 초기화 완료 — 다른 PC에도 동기화됩니다.','w');
 }
 
 
