@@ -240,7 +240,7 @@ textarea.fc{resize:vertical;min-height:80px}
 <div id="loginOverlay" style="display: flex;">
   <div class="login-card">
     
-    <h1>EB Visio LMS<span style="font-size:14px;font-weight:600;color:var(--gray3);margin-left:6px">(v1.0)</span></h1>
+    <h1>EB Visio LMS<span style="font-size:14px;font-weight:600;color:var(--gray3);margin-left:6px">(ver1.0)</span></h1>
     <p>License Management System</p>
     <div class="login-field">
       <label>이름</label>
@@ -1220,12 +1220,12 @@ function submitGuestApply(){
       return;
     }
   } else {
-    // DB에 미등록 사용자 — 게스트 신청: 사용자 등록 후 요청 생성
+    // DB에 미등록 사용자 — 게스트 신청: is_active=false(미승인) 상태로 등록, 관리자 승인 시 활성화
     const newUser={
       id: DB.nextId.user++,
       name, employee_id: emp, group: grp,
       knox_account: knox,
-      is_admin: false, is_active: true,
+      is_admin: false, is_active: false, pending_approval: true,
       registered_date: td(),
       license_assigned: false
     };
@@ -1287,8 +1287,15 @@ function doLogin(){
   if(!name||!emp){err.textContent='이름과 사번을 모두 입력하세요.';return;}
   // 로그인 시점에 시스템 관리자 존재 보장 (IDB 비동기 로드 타이밍 문제 방어)
   ensureSystemAdmin();
-  const u=DB.users.find(u=>u.is_active&&u.name===name&&u.employee_id===emp);
-  if(!u){err.textContent='등록되지 않은 사용자입니다. 이름 또는 사번을 확인하세요.';return;}
+  // ★ 먼저 이름+사번으로 사용자 존재 여부 확인 (is_active 불문)
+  const uAny=DB.users.find(u=>u.name===name&&u.employee_id===emp);
+  if(!uAny){err.textContent='등록되지 않은 사용자입니다. 이름 또는 사번을 확인하세요.';return;}
+  // ★ 미승인(pending_approval) 사용자 로그인 차단
+  if(!uAny.is_active){
+    err.innerHTML='⏳ <strong>관리자 승인 대기 중입니다.</strong><br><span style="font-size:11px;color:#B45309">등록 신청이 접수되었으나 아직 관리자 승인이 완료되지 않았습니다.<br>승인 후 다시 로그인해 주세요.</span>';
+    return;
+  }
+  const u=uAny;
   CU=u;
   document.getElementById('loginOverlay').style.display='none';
   renderLoginNotice();
@@ -2164,7 +2171,7 @@ function renderPending(){
     const u=gU(req.requester_id);const kor=tk[req.request_type]||req.request_type;const color=tc[req.request_type]||'#666';
     return `<div class="req-card" style="border-left:4px solid ${color}">
       <div class="req-hd"><span class="badge" style="background:${color};color:#fff">${esc(kor)}</span><strong>요청 #${req.id}</strong><span style="font-size:11px;color:var(--gray3)">${esc(req.created_at)}</span></div>
-      <div style="font-size:12.5px;color:var(--gray2);margin-bottom:3px">신청자: <strong>${esc(u?.name||'N/A')}</strong> (${esc(u?.employee_id||'')}) — ${esc(u?.group||'')}</div>
+      <div style="font-size:12.5px;color:var(--gray2);margin-bottom:3px">신청자: <strong>${esc(u?.name||'N/A')}</strong> (${esc(u?.employee_id||'')}) — ${esc(u?.group||'')}${u&&!u.is_active?'&nbsp;<span style="background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:4px;padding:1px 7px;font-size:10px;font-weight:700">⏳ 미승인 계정</span>':''}</div>
       <div style="font-size:12px;color:var(--gray3)">사유: ${esc(req.reason||'(사유 없음)')}</div>
       <div class="req-actions">
         <input class="fc" id="cmt_${req.id}" placeholder="승인/반려 코멘트 (선택)">
@@ -2179,6 +2186,13 @@ function doApprove(reqId){
   const req=DB.requests.find(r=>r.id===reqId);if(!req)return;
   const cmt=document.getElementById(`cmt_${reqId}`)?.value||'';
   req.status='approved';req.approved_by=CU.id;req.approved_at=td();req.admin_comment=cmt;
+  // ★ 신청자 계정 활성화 (게스트 신청으로 is_active=false 상태인 경우)
+  const reqUser=gU(req.requester_id);
+  if(reqUser&&!reqUser.is_active){
+    reqUser.is_active=true;
+    reqUser.pending_approval=false;
+    addLog('APPROVE','users',reqUser.id,`계정 활성화: ${reqUser.name}(${reqUser.employee_id}) 관리자 승인 완료`);
+  }
   if(req.request_type==='apply'){
     // pool_id가 있으면 그것 사용, 없으면 reason에서 유형 추출 후 자동 탐색
     let targetPool=req.pool_id?gP(req.pool_id):null;
@@ -2270,9 +2284,27 @@ function renderAdmin(){
 }
 
 function renderAdminUsers(){
-  const users=DB.users.filter(u=>u.is_active);
-  document.getElementById('adm_ucount').innerHTML=`현재 등록된 사용자: <strong>${users.length}명</strong>`;
-  document.getElementById('adm_ubody').innerHTML=users.map(u=>{
+  const activeUsers=DB.users.filter(u=>u.is_active);
+  // ★ 미승인 대기 사용자도 별도로 표시
+  const pendingUsers=DB.users.filter(u=>!u.is_active&&u.pending_approval);
+  const users=activeUsers;
+  document.getElementById('adm_ucount').innerHTML=`현재 등록된 사용자: <strong>${users.length}명</strong>`+(pendingUsers.length?`&nbsp;&nbsp;<span style="background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700">⏳ 승인 대기: ${pendingUsers.length}명</span>`:'');
+  document.getElementById('adm_ubody').innerHTML=[...pendingUsers.map(u=>{
+    // 미승인 대기 사용자 행 (별도 스타일)
+    const ltMatch=DB.requests.find(r=>r.requester_id===u.id&&r.status==='pending');
+    return `<tr style="background:#FFFBEB;border-left:3px solid #F59E0B;">
+      <td>${u.id}</td>
+      <td><strong>${esc(u.name)}</strong> <span style="background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">⏳ 미승인</span></td>
+      <td>${esc(u.employee_id)}</td>
+      <td>${esc(u.group||'')}</td>
+      <td style="font-size:11px">${esc(u.knox_account||'')}</td>
+      <td style="text-align:center">-</td>
+      <td style="text-align:center"><span style="color:#B45309;font-size:12px">⏳ 대기</span></td>
+      <td>${esc(u.registered_date||'')}</td>
+      <td colspan="2" style="text-align:center;color:var(--gray3);font-size:11px">승인 관리 메뉴에서 승인 후 사용 가능</td>
+      <td style="text-align:center">-</td>
+    </tr>`;
+  }), ...users.map(u=>{
     const isSysAdmin=u.employee_id===SYS_ADMIN_EMP;
     const adminBadge=isSysAdmin
       ?'<span style="font-size:9px;background:#1D4ED8;color:#fff;border-radius:4px;padding:1px 5px">시스템</span>'
@@ -2309,7 +2341,7 @@ function renderAdminUsers(){
       <td style="text-align:center">${licRegCell}</td>
       <td style="text-align:center">${delCell}</td>
     </tr>`;
-  }).join('');
+  })].join('');
 }
 
 function renderAdminPerms(){
